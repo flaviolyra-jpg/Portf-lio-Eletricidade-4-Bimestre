@@ -514,6 +514,9 @@
                             <i data-lucide="upload" class="w-4 h-4"></i> Importar JSON
                             <input type="file" id="json-import-input" accept=".json" onchange="importDataJSON(event)" class="hidden">
                         </label>
+                        <button onclick="publishData()" class="px-3 py-2 rounded-lg bg-gold hover:bg-gold-light text-charcoal-900 border border-gold/60 font-bold flex items-center gap-2">
+                            <i data-lucide="send" class="w-4 h-4"></i> Publicar Alterações
+                        </button>
                         <button onclick="resetDataToDefault()" class="px-3 py-2 rounded-lg bg-red-900/30 hover:bg-red-900/50 text-red-300 border border-red-500/30 flex items-center gap-2">
                             <i data-lucide="rotate-ccw" class="w-4 h-4"></i> Restaurar Exemplo
                         </button>
@@ -806,21 +809,78 @@
             lucide.createIcons();
         });
 
-        // Load Data from LocalStorage or Defaults
+        // Load Data: versão publicada > dados locais > dados padrão
         function loadPortfolioData() {
+            const published = loadPublishedDataFromURL();
+            if (published) {
+                chapters = published.chapters || JSON.parse(JSON.stringify(DEFAULT_CHAPTERS));
+                reflection = published.reflection || JSON.parse(JSON.stringify(DEFAULT_REFLECTION));
+                return;
+            }
+
             const savedChapters = localStorage.getItem('ifrn_portfolio_chapters_v4');
             const savedRef = localStorage.getItem('ifrn_portfolio_reflection_v4');
 
             if (savedChapters) {
-                try { chapters = JSON.parse(savedChapters); } catch(e) { chapters = DEFAULT_CHAPTERS; }
+                try { chapters = JSON.parse(savedChapters); } catch(e) { chapters = JSON.parse(JSON.stringify(DEFAULT_CHAPTERS)); }
             } else {
                 chapters = JSON.parse(JSON.stringify(DEFAULT_CHAPTERS));
             }
 
             if (savedRef) {
-                try { reflection = JSON.parse(savedRef); } catch(e) { reflection = DEFAULT_REFLECTION; }
+                try { reflection = JSON.parse(savedRef); } catch(e) { reflection = JSON.parse(JSON.stringify(DEFAULT_REFLECTION)); }
             } else {
                 reflection = JSON.parse(JSON.stringify(DEFAULT_REFLECTION));
+            }
+        }
+
+        // Publicação sem banco de dados: os dados são colocados na própria URL.
+        // Assim, qualquer pessoa que receber o link publicado verá a mesma versão.
+        function encodePublishedData(data) {
+            const json = JSON.stringify(data);
+            const bytes = new TextEncoder().encode(json);
+            let binary = '';
+            bytes.forEach(b => binary += String.fromCharCode(b));
+            return btoa(binary);
+        }
+
+        function decodePublishedData(encoded) {
+            try {
+                const binary = atob(encoded);
+                const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+                const json = new TextDecoder().decode(bytes);
+                return JSON.parse(json);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function loadPublishedDataFromURL() {
+            const hash = window.location.hash || '';
+            const prefix = '#publicado=';
+            if (!hash.startsWith(prefix)) return null;
+            return decodePublishedData(hash.substring(prefix.length));
+        }
+
+        async function publishData() {
+            const payload = {
+                version: 1,
+                publishedAt: new Date().toISOString(),
+                chapters: chapters,
+                reflection: reflection
+            };
+
+            const encoded = encodePublishedData(payload);
+            const publishedURL = window.location.origin + window.location.pathname + '#publicado=' + encoded;
+
+            history.replaceState(null, '', publishedURL);
+            localStorage.setItem('ifrn_portfolio_published_v4', JSON.stringify(payload));
+
+            try {
+                await navigator.clipboard.writeText(publishedURL);
+                showToast('Alterações publicadas! O link público foi copiado.');
+            } catch (e) {
+                showToast('Alterações publicadas! Copie o link atual do navegador.');
             }
         }
 
